@@ -1,6 +1,7 @@
 import logging
+import logging.config
 import random
-import sys
+import sqlite3
 
 import httpx
 import uvicorn
@@ -8,16 +9,75 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-log = logging.getLogger(__name__)
-log.info(uvicorn.Config.asgi_version)
-log.setLevel(logging.DEBUG)
+con = sqlite3.connect("crawl.db")
+cur = con.cursor()
 
-stream_handler = logging.StreamHandler(sys.stdout)
-log_formatter = logging.Formatter(
-    "%(asctime)s [%(processName)s: %(process)d] [%(threadName)s: %(thread)d] [%(levelname)s] %(name)s: %(message)s"
-)
-stream_handler.setFormatter(log_formatter)
-log.addHandler(stream_handler)
+
+class ColoredFormatter(logging.Formatter):
+    """Add colors to log levels"""
+
+    grey = "\x1b[38;5;240m"
+    yellow = "\x1b[33m"
+    red = "\x1b[31m"
+    bold_red = "\x1b[31;1m"
+    green = "\x1b[32m"
+    reset = "\x1b[0m"
+
+    COLORS = {
+        "DEBUG": grey,
+        "INFO": green,
+        "WARNING": yellow,
+        "ERROR": red,
+        "CRITICAL": bold_red,
+    }
+
+    def format(self, record):
+        log_color = self.COLORS.get(record.levelname, self.reset)
+        record.levelname = f"{log_color}{record.levelname}{self.reset}"
+        record.msg = f"{log_color}{record.msg}{self.reset}"
+        return super().format(record)
+
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "colored": {
+            "()": ColoredFormatter,
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "default": {
+            "level": "INFO",
+            "formatter": "colored",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "loggers": {
+        "": {
+            "level": "INFO",
+            "handlers": ["default"],
+            "propagate": False,
+        },
+        "uvicorn.error": {
+            "level": "INFO",
+            "handlers": ["default"],
+            "propagate": False,
+        },
+        "uvicorn.access": {
+            "level": "INFO",
+            "handlers": ["default"],
+            "propagate": False,
+        },
+    },
+}
+
+logging.config.dictConfig(LOGGING_CONFIG)
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Scaper Server",
@@ -39,26 +99,44 @@ user_agent_list = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363",
 ]
 
-head = {
-    "User-Agent": user_agent_list[random.randint(0, len(user_agent_list) - 1)]
-}
+head = {"User-Agent": random.choice(user_agent_list)}
 
 client = httpx.AsyncClient()
 
 
 @app.post("/scrape")
 async def scrape(request: ScrapeRequest):
-    # data = await request.json()
-    # url = data["url"]
     response = await client.get(request.url, headers=head)
     log.info("Send request sucessfully !!!!")
-    soup = BeautifulSoup(response.text)
-    return {"content": soup.prettify()}
+    soup = BeautifulSoup(response.text, "html.parser")
+    try:
+        cur = con.cursor()
+        res = cur.execute(
+            "SELECT * FROM storage WHERE domain = ?",
+            (request.url),
+        )
+        if res.fetchone():
+            return {"status": 200, "content": res.fetchone()[1]}
+        else:
+            cur = con.cursor()
+            cur.execute(
+                "INSERT INTO storage(domain, content) VALUES (?, ?);",
+                (request.url, soup.prettify()),
+            )
+            con.commit()
+
+    except Exception as e:
+        log.error(e)
+    return {"status": 200, "content": soup.prettify()}
 
 
 def main():
     uvicorn.run(
-        "main:app", host="127.0.0.1", port=8000, reload=True, log_config=log
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        log_config=LOGGING_CONFIG,
     )
 
 
