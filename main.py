@@ -9,13 +9,12 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-con = sqlite3.connect("crawl.db")
+# --- Database setup ---
+con = sqlite3.connect("crawl.db", check_same_thread=False)
 cur = con.cursor()
 
 
 class ColoredFormatter(logging.Formatter):
-    """Add colors to log levels"""
-
     grey = "\x1b[38;5;240m"
     yellow = "\x1b[33m"
     red = "\x1b[31m"
@@ -57,11 +56,7 @@ LOGGING_CONFIG = {
         },
     },
     "loggers": {
-        "": {
-            "level": "INFO",
-            "handlers": ["default"],
-            "propagate": False,
-        },
+        "": {"level": "INFO", "handlers": ["default"], "propagate": False},
         "uvicorn.error": {
             "level": "INFO",
             "handlers": ["default"],
@@ -76,11 +71,11 @@ LOGGING_CONFIG = {
 }
 
 logging.config.dictConfig(LOGGING_CONFIG)
-
 log = logging.getLogger(__name__)
 
+# --- FastAPI app ---
 app = FastAPI(
-    title="Scaper Server",
+    title="Scraper Server",
     description="API for crawl website",
     version="0.1.0",
 )
@@ -100,34 +95,31 @@ user_agent_list = [
 ]
 
 head = {"User-Agent": random.choice(user_agent_list)}
-
 client = httpx.AsyncClient()
 
 
 @app.post("/scrape")
 async def scrape(request: ScrapeRequest):
     response = await client.get(request.url, headers=head)
-    log.info("Send request sucessfully !!!!")
+    log.info("Send request successfully!")
     soup = BeautifulSoup(response.text, "html.parser")
     try:
-        cur = con.cursor()
         res = cur.execute(
-            "SELECT * FROM storage WHERE domain = ?",
-            (request.url),
+            "SELECT * FROM storage WHERE domain = ?", (request.url,)
         )
-        if res.fetchone():
-            return {"status": 200, "content": res.fetchone()[1]}
+        row = res.fetchone()
+        if row:
+            return {"status": 200, "content": row[1]}
         else:
-            cur = con.cursor()
             cur.execute(
                 "INSERT INTO storage(domain, content) VALUES (?, ?);",
                 (request.url, soup.prettify()),
             )
             con.commit()
-
+            return {"status": 200, "content": soup.prettify()}
     except Exception as e:
-        log.error(e)
-    return {"status": 200, "content": soup.prettify()}
+        log.error(f"Database error: {e}")
+        return {"status": 500, "error": str(e)}
 
 
 def main():
