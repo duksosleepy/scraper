@@ -1,16 +1,24 @@
+import functools
 import logging
 import logging.config
 import random
 import sqlite3
+import time
 
 import httpx
 import uvicorn
 from bs4 import BeautifulSoup
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse  # Add this import
 from pydantic import BaseModel
+
+rate_limit_store = {}
+MAX_REQUESTS = 2
+TIME_WINDOW = 60
 
 # --- Database setup ---
 con = sqlite3.connect("crawl.db", check_same_thread=False)
+con.execute("pragma journal_mode=wal")
 cur = con.cursor()
 
 
@@ -98,6 +106,28 @@ head = {"User-Agent": random.choice(user_agent_list)}
 client = httpx.AsyncClient()
 
 
+@app.middleware("http")
+async def rate_limiter(request: Request, call_next):
+    client_ip = request.client.host
+    now = time.time()
+
+    request_times = rate_limit_store.get(client_ip, [])
+    request_times = [t for t in request_times if now - t < TIME_WINDOW]
+
+    if len(request_times) >= MAX_REQUESTS:
+        # Return proper JSONResponse with 429 status code
+        return JSONResponse(
+            status_code=429,
+            content={"status": 429, "error": "Too many requests, please wait."},
+        )
+
+    request_times.append(now)
+    rate_limit_store[client_ip] = request_times
+
+    return await call_next(request)
+
+
+@functools.lru_cache
 @app.post("/scrape")
 async def scrape(request: ScrapeRequest):
     response = await client.get(request.url, headers=head)
