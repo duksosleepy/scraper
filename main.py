@@ -1,9 +1,11 @@
 import functools
+import hashlib
 import logging
 import logging.config
 import random
 import sqlite3
 import time
+import uuid
 
 import httpx
 import uvicorn
@@ -13,7 +15,10 @@ from fastapi.responses import JSONResponse  # Add this import
 from pydantic import BaseModel
 
 rate_limit_store = {}
-MAX_REQUESTS = 2
+api_key = {
+    "b42cbdb211f7065513e40f2dbd373025609c17ef03823887e51183274813d38e": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+}
+MAX_REQUESTS = 5
 TIME_WINDOW = 60
 
 # --- Database setup ---
@@ -123,6 +128,29 @@ async def rate_limiter(request: Request, call_next):
 
     request_times.append(now)
     rate_limit_store[client_ip] = request_times
+
+    client_ip = request.client.host or "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    language = request.headers.get("Accept-Language")
+    raw_fingerprint = f"{client_ip}:{user_agent}:{language}"
+    device_id = hashlib.sha256(raw_fingerprint.encode()).hexdigest()
+    log.info(device_id)
+    if device_id not in api_key:
+        api_key[device_id] = uuid.UUID("{00010203-0405-0607-0809-0a0b0c0d0e0f}")
+
+    x_api_token = request.headers.get("X-API-TOKEN")
+
+    if not x_api_token:
+        return JSONResponse(
+            status_code=401,
+            content={"status": 401, "error": "Missing X-API-TOKEN header"},
+        )
+    if x_api_token != api_key[device_id]:
+        return JSONResponse(
+            status_code=403,
+            content={"status": 403, "error": "Invalid X-API-TOKEN"},
+        )
+    log.info(f"Received X-API-TOKEN: {x_api_token}")
 
     return await call_next(request)
 
