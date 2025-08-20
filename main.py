@@ -11,7 +11,7 @@ import httpx
 import uvicorn
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse  # Add this import
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 rate_limit_store = {}

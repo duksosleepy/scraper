@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="script.js"></script>
+        <link rel="stylesheet" href="styles.css">
+        <title>Web Scraper</title>
+    </head>
+    <body>
+        <main>
+            <form action="/scrape" method="post">
+                <p>
+                    <label for="url-input">URL:</label>
+                    <input type="url" required=True value="https://example.com" id="url-input" name="url-input" size="30"/>
+                  </p>
+                  <p class="button">
+                    <button type="submit">Get content!!</button>
+                  </p>
+
+            </form>
+            <textarea>
+
+            </textarea>
+    </main>
+    </body>
+</html>
