@@ -1,0 +1,29 @@
+#url-input{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+input{
+    border: 2px solid black;
+    border-radius: 10px;
+}
+
+.button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+textarea{
+    display: block;
+    margin: 20px auto;
+    width: 1000px;
+    height: 500px;
+    border: 2px solid black;
+    border-radius: 10px;
+}
+
+body{
+    background-color: rgb(67, 94, 22);
+}
